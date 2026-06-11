@@ -48,7 +48,7 @@ LOGIN_PAGE = f'''<!DOCTYPE html><html><head><title>RATATUGEN C2</title>
   <button type="submit" style="width:200px">Login</button>
 </form></div></body></html>'''
 
-DASHBOARD = f'''<!DOCTYPE html><html><head><title>RATATUGEN C2</title>
+DASHBOARD = '''<!DOCTYPE html><html><head><title>RATATUGEN C2</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>{STYLE}</style>
 <script>
