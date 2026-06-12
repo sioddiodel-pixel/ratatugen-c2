@@ -123,6 +123,9 @@ async def list_cmd(ctx):
         lines.append(f"{s} `{cid}` — {int(d)}s ago")
     await ctx.send("\n".join(lines))
 
+# Remove default help to avoid conflict, then add our own
+bot.remove_command("help")
+
 @bot.command(name="help")
 async def help_cmd(ctx):
     """!help — Show commands"""
