@@ -6,7 +6,7 @@ import discord, threading, os
 from discord.ext import commands
 from flask import Flask
 
-TOKEN = os.environ.get("BOT_TOKEN", "MTUxNDY2MDU2NjE1MTU5ODM3Mg.GHDMYF.CbgDe1fkPp_5jkkPf63pkiYA-zqqvhSVbTU7gI")
+TOKEN = os.environ.get("BOT_TOKEN", "MTUxNDY2MDU2NjE1MTU5ODM3Mg.GUjwEc.ih1gJfPolXOJ__Xy_JtHvoE6vsm-LYrIETBAII")
 ADMIN_ID = 1145707087666626670
 CHANNEL_ID = 1514625087129780284
 
